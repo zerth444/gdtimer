@@ -22,6 +22,66 @@ using WF = System.Windows.Forms;
 
 namespace GDTimer
 {
+    public static class Lang
+    {
+        public static string Current = "en";
+
+        private static readonly Dictionary<string, string[]> S = new Dictionary<string, string[]>
+        {
+            { "status_off", new[] { "Geometry Dash is not running", "Geometry Dash не запущена" } },
+            { "status_menu", new[] { "In menu", "В меню" } },
+            { "status_in", new[] { "in ", "в " } },
+            { "status_in_fallback", new[] { "level", "уровне" } },
+            { "status_paused", new[] { "Paused", "Пауза" } },
+            { "today_none", new[] { "0 min", "0 мин" } },
+            { "hero_today", new[] { "PLAYTIME TODAY", "ПЛЕЙТАЙМ ЗА СЕГОДНЯ" } },
+            { "levels_today", new[] { "TODAY'S LEVELS", "УРОВНИ СЕГОДНЯ" } },
+            { "hotkey_label", new[] { "Hotkey", "Горячая клавиша" } },
+            { "autorun", new[] { "Start with Windows", "Запускать с Windows" } },
+            { "quit", new[] { "Quit", "Выход" } },
+            { "rec_hint", new[] { "Press a key · Esc cancels", "Нажмите клавишу · Esc — отмена" } },
+            { "rec_busy", new[] { "Shortcut is taken", "Сочетание занято" } },
+            { "tray_open", new[] { "Open", "Открыть" } },
+            { "tray_exit", new[] { "Quit", "Выход" } },
+            { "u_hour", new[] { "h", "ч" } },
+            { "u_min", new[] { "min", "мин" } },
+            { "u_sec", new[] { "s", "с" } },
+            { "u_min_short", new[] { "m", "м" } },
+            { "u_ltmin", new[] { "< 1 min", "< 1 мин" } },
+        };
+
+        private static readonly string[] MonthsEn =
+            { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
+        private static readonly string[] MonthsRu =
+            { "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь" };
+        private static readonly string[] MonthsGenEn =
+            { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
+        private static readonly string[] MonthsGenRu =
+            { "января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря" };
+        private static readonly string[] WeekdaysEn = { "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su" };
+        private static readonly string[] WeekdaysRu = { "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс" };
+
+        public static bool IsRu() { return Current == "ru"; }
+
+        public static string T(string key)
+        {
+            string[] v;
+            if (!S.TryGetValue(key, out v)) return key;
+            return IsRu() ? v[1] : v[0];
+        }
+
+        public static string MonthName(int month) { return IsRu() ? MonthsRu[month - 1] : MonthsEn[month - 1]; }
+
+        public static string DayTitle(DateTime date)
+        {
+            return IsRu()
+                ? date.Day + " " + MonthsGenRu[date.Month - 1]
+                : MonthsGenEn[date.Month - 1] + " " + date.Day;
+        }
+
+        public static string Weekday(int i) { return IsRu() ? WeekdaysRu[i] : WeekdaysEn[i]; }
+    }
+
     public class App : Application
     {
         [STAThread]
@@ -55,6 +115,13 @@ namespace GDTimer
 
             window = new MainWindow(store);
             window.QuitRequested += ExitApp;
+            window.LanguageChanged += () => tray.ApplyLanguage();
+            tray.ApplyLanguage();
+            SessionEnding += (sn, ev) =>
+            {
+                try { window.SavePosition(); } catch { }
+                try { store.Save(); } catch { }
+            };
 
             timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             timer.Tick += Tick;
@@ -185,6 +252,8 @@ namespace GDTimer
         public void AddLevelSecond(DateTime day, string level)
         {
             if (string.IsNullOrEmpty(level)) return;
+            level = level.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ').Trim();
+            if (level.Length == 0 || level.Length > 120) return;
             var k = day.ToString("yyyy-MM-dd");
             Dictionary<string, long> dayMap;
             if (!levels.TryGetValue(k, out dayMap))
@@ -303,7 +372,14 @@ namespace GDTimer
         {
             if (attached)
             {
-                try { if (!Process.GetProcessById(pid).HasExited) return true; } catch { }
+                try
+                {
+                    using (var p = Process.GetProcessById(pid))
+                    {
+                        if (!p.HasExited) return true;
+                    }
+                }
+                catch { }
                 Detach();
             }
             return Attach();
@@ -315,12 +391,17 @@ namespace GDTimer
             {
                 var procs = Process.GetProcessesByName(ProcessName);
                 if (procs.Length == 0) return false;
-                var p = procs[0];
                 IntPtr b;
-                try { b = p.MainModule.BaseAddress; } catch { return false; }
-                IntPtr h = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, p.Id);
+                int id;
+                using (var p = procs[0])
+                {
+                    try { b = p.MainModule.BaseAddress; } catch { return false; }
+                    id = p.Id;
+                }
+                foreach (var proc in procs) { try { proc.Dispose(); } catch { } }
+                IntPtr h = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, id);
                 if (h == IntPtr.Zero) return false;
-                pid = p.Id;
+                pid = id;
                 handle = h;
                 moduleBase = b;
                 attached = true;
@@ -433,6 +514,8 @@ namespace GDTimer
     public class Tray : IDisposable
     {
         private WF.NotifyIcon icon;
+        private WF.ToolStripMenuItem menuOpen;
+        private WF.ToolStripMenuItem menuExit;
 
         public event Action Open;
         public event Action Exit;
@@ -449,11 +532,21 @@ namespace GDTimer
             {
                 icon.Icon = System.Drawing.SystemIcons.Application;
             }
+            menuOpen = new WF.ToolStripMenuItem(Lang.T("tray_open"));
+            menuOpen.Click += (s, e) => { if (Open != null) Open(); };
+            menuExit = new WF.ToolStripMenuItem(Lang.T("tray_exit"));
+            menuExit.Click += (s, e) => { if (Exit != null) Exit(); };
             var menu = new WF.ContextMenuStrip();
-            menu.Items.Add("Открыть", null, (s, e) => { if (Open != null) Open(); });
-            menu.Items.Add("Выход", null, (s, e) => { if (Exit != null) Exit(); });
+            menu.Items.Add(menuOpen);
+            menu.Items.Add(menuExit);
             icon.ContextMenuStrip = menu;
             icon.MouseDoubleClick += (s, e) => { if (e.Button == WF.MouseButtons.Left && Open != null) Open(); };
+        }
+
+        public void ApplyLanguage()
+        {
+            if (menuOpen != null) menuOpen.Text = Lang.T("tray_open");
+            if (menuExit != null) menuExit.Text = Lang.T("tray_exit");
         }
 
         public void Dispose()
@@ -480,9 +573,7 @@ namespace GDTimer
         private static readonly string[] LevelHex = { "#181D1A", "#1E2A22", "#254231", "#2E5C3F", "#3A7A50", "#4AA066" };
         private static readonly string[] CellTextHex = { "#6E7A73", "#A7C4B2", "#BCD6C6", "#D2E6D9", "#E6F2EA", "#F3FAF5" };
 
-        private static readonly string[] Months = { "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь" };
-        private static readonly string[] MonthsGenitive = { "января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря" };
-        private static readonly string[] Weekdays = { "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс" };
+
 
         private const double WindowWidth = 382;
         private const double ExpandedHeight = 700;
@@ -528,6 +619,9 @@ namespace GDTimer
         private bool loadingUi;
 
         private TextBlock statusText, todayValue, monthLabel;
+        private TextBlock heroLabel, hotkeyCaption;
+        private TextBlock[] dowLabels;
+        private Button quitButton, langEnBtn, langRuBtn;
         private Border statusPill;
         private Grid calendarGrid;
         private StackPanel levelsPanel;
@@ -571,6 +665,7 @@ namespace GDTimer
 
             Content = BuildLayout();
             LoadSettings();
+            ApplyLanguage();
             hotkeyButton.Content = FormatHotkey();
 
             MouseLeftButtonDown += (s, e) =>
@@ -679,7 +774,8 @@ namespace GDTimer
             };
             heroGrid.Children.Add(glow);
             var todayStack = new StackPanel();
-            todayStack.Children.Add(SectionLabel("ПЛЕЙТАЙМ ЗА СЕГОДНЯ"));
+            heroLabel = SectionLabel(Lang.T("hero_today"));
+            todayStack.Children.Add(heroLabel);
             todayValue = Tabular(new TextBlock
             {
                 FontSize = 30,
@@ -721,14 +817,18 @@ namespace GDTimer
             collapsible.Children.Add(navRow);
 
             var dowGrid = new UniformGrid { Columns = 7, Margin = new Thickness(0, 8, 0, 0) };
-            foreach (var w in Weekdays)
-                dowGrid.Children.Add(new TextBlock
+            dowLabels = new TextBlock[7];
+            for (int wi = 0; wi < 7; wi++)
+            {
+                dowLabels[wi] = new TextBlock
                 {
-                    Text = w,
+                    Text = Lang.Weekday(wi),
                     FontSize = 9.5,
                     Foreground = B(FaintHex),
                     HorizontalAlignment = HorizontalAlignment.Center
-                });
+                };
+                dowGrid.Children.Add(dowLabels[wi]);
+            }
             collapsible.Children.Add(dowGrid);
 
             var calendarBoard = new Border
@@ -746,7 +846,7 @@ namespace GDTimer
             calendarBoard.Child = calendarGrid;
             collapsible.Children.Add(calendarBoard);
 
-            levelsHeader = SectionLabel("УРОВНИ СЕГОДНЯ");
+            levelsHeader = SectionLabel(Lang.T("levels_today"));
             levelsHeader.Margin = new Thickness(0, 10, 0, 0);
             collapsible.Children.Add(levelsHeader);
             levelsPanel = new StackPanel();
@@ -766,13 +866,14 @@ namespace GDTimer
 
             var footer = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
             var hotkeyRow = new DockPanel { LastChildFill = false };
-            hotkeyRow.Children.Add(new TextBlock
+            hotkeyCaption = new TextBlock
             {
-                Text = "Горячая клавиша",
+                Text = Lang.T("hotkey_label"),
                 FontSize = 11,
                 Foreground = B(MutedHex),
                 VerticalAlignment = VerticalAlignment.Center
-            });
+            };
+            hotkeyRow.Children.Add(hotkeyCaption);
             hotkeyButton = new Button { VerticalAlignment = VerticalAlignment.Center };
             hotkeyButton.Click += (s, e) => StartRecording();
             var hotkeyChip = new Border
@@ -792,16 +893,37 @@ namespace GDTimer
             var controls = new DockPanel { Margin = new Thickness(0, 6, 0, 0), LastChildFill = false };
             autorunCheck = new CheckBox
             {
-                Content = "Запускать с Windows",
+                Content = Lang.T("autorun"),
                 VerticalAlignment = VerticalAlignment.Center
             };
             autorunCheck.Checked += (s, e) => { if (!loadingUi) SetAutorun(true); };
             autorunCheck.Unchecked += (s, e) => { if (!loadingUi) SetAutorun(false); };
-            var quit = new Button { Content = "Выход", VerticalAlignment = VerticalAlignment.Center };
-            quit.Click += (s, e) => { if (QuitRequested != null) QuitRequested(); };
+            quitButton = new Button { Content = Lang.T("quit"), VerticalAlignment = VerticalAlignment.Center };
+            quitButton.Click += (s, e) => { if (QuitRequested != null) QuitRequested(); };
+            langEnBtn = new Button { Content = "EN", FontSize = 10, Padding = new Thickness(8, 2, 8, 2), Margin = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
+            langRuBtn = new Button { Content = "RU", FontSize = 10, Padding = new Thickness(8, 2, 8, 2), Margin = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
+            langEnBtn.Click += (s, e) => SetLang("en");
+            langRuBtn.Click += (s, e) => SetLang("ru");
+            var langSeg = new Border
+            {
+                CornerRadius = new CornerRadius(9),
+                Background = B(TrackHex),
+                BorderBrush = B(BorderHex),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(2),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+            var langRow = new StackPanel { Orientation = Orientation.Horizontal };
+            langRow.Children.Add(langEnBtn);
+            langRow.Children.Add(langRuBtn);
+            langSeg.Child = langRow;
+            var rightBox = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            rightBox.Children.Add(langSeg);
+            rightBox.Children.Add(quitButton);
             controls.Children.Add(autorunCheck);
-            DockPanel.SetDock(quit, Dock.Right);
-            controls.Children.Add(quit);
+            DockPanel.SetDock(rightBox, Dock.Right);
+            controls.Children.Add(rightBox);
             footer.Children.Add(controls);
             root.Children.Add(footer);
 
@@ -862,24 +984,24 @@ namespace GDTimer
 
             if (!st.Running)
             {
-                statusText.Text = "Geometry Dash не запущена";
+                statusText.Text = Lang.T("status_off");
             }
             else if (st.Playing && !st.Paused)
             {
                 var nm = !string.IsNullOrEmpty(st.LevelName) ? st.LevelName : currentLevel;
-                statusText.Text = "в " + (string.IsNullOrEmpty(nm) ? "уровне" : nm);
+                statusText.Text = Lang.T("status_in") + (string.IsNullOrEmpty(nm) ? Lang.T("status_in_fallback") : nm);
             }
             else if (st.Playing)
             {
-                statusText.Text = "Пауза";
+                statusText.Text = Lang.T("status_paused");
             }
             else
             {
-                statusText.Text = "В меню";
+                statusText.Text = Lang.T("status_menu");
             }
 
             var secs = store.SecondsToday();
-            todayValue.Text = secs > 0 ? FmtWords(secs) : "0 мин";
+            todayValue.Text = secs > 0 ? FmtWords(secs) : Lang.T("today_none");
             var minute = secs / 60;
             if (minute != lastRenderedMinute || currentLevel != lastRenderedLevel)
             {
@@ -903,18 +1025,18 @@ namespace GDTimer
             var h = total / 3600;
             var m = (total % 3600) / 60;
             var s = total % 60;
-            if (h > 0) return h + " ч " + m.ToString("00") + " мин";
-            if (m > 0) return m + " мин " + s.ToString("00") + " с";
-            return s + " с";
+            if (h > 0) return h + " " + Lang.T("u_hour") + " " + m.ToString("00") + " " + Lang.T("u_min");
+            if (m > 0) return m + " " + Lang.T("u_min") + " " + s.ToString("00") + " " + Lang.T("u_sec");
+            return s + " " + Lang.T("u_sec");
         }
 
         private static string FmtShort(long total)
         {
             var h = total / 3600;
             var m = (total % 3600) / 60;
-            if (h > 0) return h + " ч " + m.ToString("00") + " м";
-            if (m > 0) return m + " мин";
-            return "< 1 мин";
+            if (h > 0) return h + " " + Lang.T("u_hour") + " " + m.ToString("00") + " " + Lang.T("u_min_short");
+            if (m > 0) return m + " " + Lang.T("u_min");
+            return Lang.T("u_ltmin");
         }
 
         private void Go(int delta)
@@ -926,9 +1048,35 @@ namespace GDTimer
             RefreshAll();
         }
 
+        public event Action LanguageChanged;
+
+        public void SetLang(string code)
+        {
+            if (code != "en" && code != "ru") return;
+            Lang.Current = code;
+            SaveSettings();
+            ApplyLanguage();
+            if (LanguageChanged != null) LanguageChanged();
+        }
+
+        public void ApplyLanguage()
+        {
+            heroLabel.Text = Lang.T("hero_today");
+            levelsHeader.Text = Lang.T("levels_today");
+            hotkeyCaption.Text = Lang.T("hotkey_label");
+            autorunCheck.Content = Lang.T("autorun");
+            quitButton.Content = Lang.T("quit");
+            for (int i = 0; i < 7 && i < dowLabels.Length; i++)
+                dowLabels[i].Text = Lang.Weekday(i);
+            langEnBtn.Foreground = Lang.IsRu() ? B(MutedHex) : B(AccentHex);
+            langRuBtn.Foreground = Lang.IsRu() ? B(AccentHex) : B(MutedHex);
+            if (recording) hotkeyButton.Content = Lang.T("rec_hint");
+            RefreshAll();
+        }
+
         public void RefreshAll()
         {
-            monthLabel.Text = Months[viewMonth.Month - 1] + " " + viewMonth.Year;
+            monthLabel.Text = Lang.MonthName(viewMonth.Month) + " " + viewMonth.Year;
             RenderCalendar();
             UpdateLevels();
             FitHeight();
@@ -996,7 +1144,7 @@ namespace GDTimer
             var head = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 7) };
             var dateTxt = new TextBlock
             {
-                Text = date.Day + " " + MonthsGenitive[date.Month - 1],
+                Text = Lang.DayTitle(date),
                 FontSize = 12.5,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = B(TextHex),
@@ -1204,7 +1352,7 @@ namespace GDTimer
             if (hwndSource != null) hwndSource.AddHook(WndProc);
             PreviewKeyDown += OnPreviewKeyDown;
             if (!RegisterHotKey(hwnd, HOTKEY_ID, (uint)(hkMods | MOD_NOREPEAT), hkVk))
-                ShowHint("Сочетание занято");
+                ShowHint(Lang.T("rec_busy"));
         }
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -1231,7 +1379,7 @@ namespace GDTimer
         {
             if (hintTimer != null) hintTimer.Stop();
             recording = true;
-            hotkeyButton.Content = "Нажмите клавишу · Esc — отмена";
+            hotkeyButton.Content = Lang.T("rec_hint");
             hotkeyButton.Foreground = B(AccentHex);
         }
 
@@ -1285,7 +1433,7 @@ namespace GDTimer
             {
                 RegisterHotKey(hwnd, HOTKEY_ID, (uint)(hkMods | MOD_NOREPEAT), hkVk);
                 StopRecording();
-                ShowHint("Сочетание занято");
+                ShowHint(Lang.T("rec_busy"));
             }
         }
 
@@ -1342,7 +1490,7 @@ namespace GDTimer
             try
             {
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(SettingsFile));
-                File.WriteAllText(SettingsFile, "hotkey=" + hkMods + "," + hkVk);
+                File.WriteAllText(SettingsFile, "hotkey=" + hkMods + "," + hkVk + "\r\nlang=" + Lang.Current);
             }
             catch { }
         }
@@ -1354,13 +1502,20 @@ namespace GDTimer
                 if (!File.Exists(SettingsFile)) return;
                 foreach (var line in File.ReadAllLines(SettingsFile))
                 {
-                    if (!line.StartsWith("hotkey=")) continue;
-                    var p = line.Substring(7).Split(',');
-                    int m, v;
-                    if (p.Length == 2 && int.TryParse(p[0], out m) && int.TryParse(p[1], out v) && v > 0)
+                    if (line.StartsWith("hotkey="))
                     {
-                        hkMods = m;
-                        hkVk = v;
+                        var p = line.Substring(7).Split(',');
+                        int m, v;
+                        if (p.Length == 2 && int.TryParse(p[0], out m) && int.TryParse(p[1], out v) && v > 0)
+                        {
+                            hkMods = m;
+                            hkVk = v;
+                        }
+                    }
+                    else if (line.StartsWith("lang="))
+                    {
+                        var code = line.Substring(5).Trim().ToLowerInvariant();
+                        if (code == "ru" || code == "en") Lang.Current = code;
                     }
                 }
             }
