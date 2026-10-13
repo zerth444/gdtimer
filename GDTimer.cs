@@ -10,6 +10,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Markup;
@@ -464,18 +465,20 @@ namespace GDTimer
 
     public class MainWindow : Window
     {
-        private const string BgHex = "#0F1115";
-        private const string CardBorderHex = "#262B33";
-        private const string BorderHex = "#23262C";
-        private const string TextHex = "#E7E9ED";
-        private const string MutedHex = "#8B929E";
-        private const string FaintHex = "#5A606B";
-        private const string AccentHex = "#74A4F4";
-        private const string GreenHex = "#3FB96F";
-        private const string AmberHex = "#E0A44A";
-        private const string GreyDotHex = "#3A3E46";
-        private static readonly string[] LevelHex = { "#14171C", "#1A2438", "#223554", "#2A4470", "#32589B", "#3A6BC4" };
-        private static readonly string[] CellTextHex = { "#6B7280", "#9DB4E0", "#B4C7EA", "#CDDAF2", "#E2EAF8", "#F0F4FB" };
+        private const string BgHex = "#0E1110";
+        private const string SurfaceHex = "#161C19";
+        private const string TrackHex = "#1C2420";
+        private const string CardBorderHex = "#242A26";
+        private const string BorderHex = "#212724";
+        private const string TextHex = "#E8EDE9";
+        private const string MutedHex = "#93A09A";
+        private const string FaintHex = "#5C6963";
+        private const string AccentHex = "#45D07C";
+        private const string GreenHex = "#45D07C";
+        private const string AmberHex = "#D8A657";
+        private const string GreyDotHex = "#3A423D";
+        private static readonly string[] LevelHex = { "#181D1A", "#1E2A22", "#254231", "#2E5C3F", "#3A7A50", "#4AA066" };
+        private static readonly string[] CellTextHex = { "#6E7A73", "#A7C4B2", "#BCD6C6", "#D2E6D9", "#E6F2EA", "#F3FAF5" };
 
         private static readonly string[] Months = { "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь" };
         private static readonly string[] MonthsGenitive = { "января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря" };
@@ -483,26 +486,54 @@ namespace GDTimer
 
         private const double WindowWidth = 382;
         private const double ExpandedHeight = 700;
+        private const double FixedHeight = 660;
         private const double CollapsedHeight = 132;
 
         private static Brush B(string hex) { return (Brush)new BrushConverter().ConvertFromString(hex); }
+
+        private static TextBlock Tabular(TextBlock tb)
+        {
+            Typography.SetNumeralAlignment(tb, FontNumeralAlignment.Tabular);
+            return tb;
+        }
+
+        private static FontFamily LoadAppFont()
+        {
+            try
+            {
+                var dir = System.IO.Path.Combine(
+                    System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location),
+                    "fonts");
+                if (System.IO.Directory.Exists(dir) && System.IO.Directory.GetFiles(dir, "*.ttf").Length > 0)
+                {
+                    foreach (var fam in Fonts.GetFontFamilies(new Uri(dir + System.IO.Path.DirectorySeparatorChar)))
+                    {
+                        foreach (var name in fam.FamilyNames.Values)
+                        {
+                            if (!string.IsNullOrEmpty(name) && name.IndexOf("Comfortaa", StringComparison.OrdinalIgnoreCase) >= 0)
+                                return fam;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return new FontFamily("Trebuchet MS");
+        }
 
         private readonly Store store;
         private DateTime viewMonth;
         private long lastRenderedMinute = -1;
         private string currentLevel;
         private string lastRenderedLevel;
-        private bool collapsed;
         private bool loadingUi;
 
-        private Ellipse statusDot;
         private TextBlock statusText, todayValue, monthLabel;
+        private Border statusPill;
         private Grid calendarGrid;
         private StackPanel levelsPanel;
         private TextBlock levelsHeader;
         private CheckBox autorunCheck;
-        private UIElement collapsiblePart;
-        private Button pinButton, collapseButton;
+        private Button collapseButton;
         private Button hotkeyButton;
         private bool recording;
         private int hkMods = 0;
@@ -526,6 +557,7 @@ namespace GDTimer
             viewMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
 
             Title = "GDTimer";
+            FontFamily = LoadAppFont();
             Width = WindowWidth;
             Height = ExpandedHeight;
             WindowStyle = WindowStyle.None;
@@ -566,25 +598,174 @@ namespace GDTimer
         {
             var card = new Border
             {
-                CornerRadius = new CornerRadius(16),
-                Background = B(BgHex),
+                CornerRadius = new CornerRadius(24),
+                Background = new LinearGradientBrush(Color.FromRgb(0x14, 0x19, 0x17), Color.FromRgb(0x09, 0x0C, 0x0B), 90.0),
                 BorderBrush = B(CardBorderHex),
                 BorderThickness = new Thickness(1),
                 Margin = new Thickness(16),
                 Effect = new DropShadowEffect
                 {
                     Color = Colors.Black,
-                    Opacity = 0.5,
-                    BlurRadius = 20,
-                    ShadowDepth = 2,
+                    Opacity = 0.55,
+                    BlurRadius = 28,
+                    ShadowDepth = 4,
                     Direction = 270
                 }
             };
 
-            var root = new DockPanel { Margin = new Thickness(18, 14, 18, 16) };
+            var root = new StackPanel { Margin = new Thickness(16, 12, 16, 12) };
 
-            var footer = new StackPanel();
-            var hotkeyRow = new DockPanel { Margin = new Thickness(0, 12, 0, 0), LastChildFill = false };
+            var header = new DockPanel { LastChildFill = false };
+            statusPill = new Border
+            {
+                CornerRadius = new CornerRadius(20),
+                Background = B(TrackHex),
+                BorderBrush = B(CardBorderHex),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(11, 6, 13, 6),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var statusInner = new StackPanel { Orientation = Orientation.Horizontal };
+            statusText = new TextBlock
+            {
+                FontSize = 11,
+                Foreground = B(MutedHex),
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 200
+            };
+            statusInner.Children.Add(statusText);
+            statusPill.Child = statusInner;
+            header.Children.Add(statusPill);
+
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            collapseButton = IconButton("—", (s, e) => Hide());
+            var hideButton = IconButton("\u2715", (s, e) => Hide());
+            actions.Children.Add(collapseButton);
+            actions.Children.Add(hideButton);
+            var actionsPill = new Border
+            {
+                CornerRadius = new CornerRadius(20),
+                Background = B(SurfaceHex),
+                BorderBrush = B(BorderHex),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(2, 2, 6, 2),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            actionsPill.Child = actions;
+            DockPanel.SetDock(actionsPill, Dock.Right);
+            header.Children.Add(actionsPill);
+            root.Children.Add(header);
+
+            var todayCard = new Border
+            {
+                CornerRadius = new CornerRadius(16),
+                Background = B(SurfaceHex),
+                BorderBrush = B(CardBorderHex),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12, 8, 12, 8),
+                Margin = new Thickness(0, 10, 0, 0)
+            };
+            var heroGrid = new Grid();
+            var glow = new Ellipse
+            {
+                Width = 230,
+                Height = 110,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, -30, 0, 0),
+                Opacity = 0.5,
+                Fill = new RadialGradientBrush(Color.FromArgb(0x30, 0x45, 0xD0, 0x7C), Color.FromArgb(0x00, 0x45, 0xD0, 0x7C))
+            };
+            heroGrid.Children.Add(glow);
+            var todayStack = new StackPanel();
+            todayStack.Children.Add(SectionLabel("ПЛЕЙТАЙМ ЗА СЕГОДНЯ"));
+            todayValue = Tabular(new TextBlock
+            {
+                FontSize = 30,
+                FontWeight = FontWeights.Bold,
+                Foreground = B(AccentHex),
+                Margin = new Thickness(0, 2, 0, 0)
+            });
+            todayStack.Children.Add(todayValue);
+            heroGrid.Children.Add(todayStack);
+            todayCard.Child = heroGrid;
+            root.Children.Add(todayCard);
+
+            var collapsible = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+
+            var navRow = new DockPanel { LastChildFill = false };
+            monthLabel = new TextBlock
+            {
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = B(TextHex),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            navRow.Children.Add(monthLabel);
+            var nav = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            nav.Children.Add(GhostButton("\u2039", () => Go(-1)));
+            nav.Children.Add(GhostButton("\u203A", () => Go(1)));
+            var navPill = new Border
+            {
+                CornerRadius = new CornerRadius(20),
+                Background = B(SurfaceHex),
+                BorderBrush = B(BorderHex),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(2, 2, 6, 2),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            navPill.Child = nav;
+            DockPanel.SetDock(navPill, Dock.Right);
+            navRow.Children.Add(navPill);
+            collapsible.Children.Add(navRow);
+
+            var dowGrid = new UniformGrid { Columns = 7, Margin = new Thickness(0, 8, 0, 0) };
+            foreach (var w in Weekdays)
+                dowGrid.Children.Add(new TextBlock
+                {
+                    Text = w,
+                    FontSize = 9.5,
+                    Foreground = B(FaintHex),
+                    HorizontalAlignment = HorizontalAlignment.Center
+                });
+            collapsible.Children.Add(dowGrid);
+
+            var calendarBoard = new Border
+            {
+                CornerRadius = new CornerRadius(16),
+                Background = B(SurfaceHex),
+                BorderBrush = B(BorderHex),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(6, 6, 6, 4),
+                Margin = new Thickness(0, 6, 0, 0)
+            };
+            calendarGrid = new Grid();
+            for (int i = 0; i < 7; i++)
+                calendarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            calendarBoard.Child = calendarGrid;
+            collapsible.Children.Add(calendarBoard);
+
+            levelsHeader = SectionLabel("УРОВНИ СЕГОДНЯ");
+            levelsHeader.Margin = new Thickness(0, 10, 0, 0);
+            collapsible.Children.Add(levelsHeader);
+            levelsPanel = new StackPanel();
+            var levelsScroll = new ScrollViewer
+            {
+                Height = 110,
+                Margin = new Thickness(0, 4, 0, 0),
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            };
+            levelsScroll.Content = levelsPanel;
+            collapsible.Children.Add(levelsScroll);
+
+            root.Children.Add(collapsible);
+
+            root.Children.Add(Divider(new Thickness(0, 10, 0, 0)));
+
+            var footer = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+            var hotkeyRow = new DockPanel { LastChildFill = false };
             hotkeyRow.Children.Add(new TextBlock
             {
                 Text = "Горячая клавиша",
@@ -594,9 +775,21 @@ namespace GDTimer
             });
             hotkeyButton = new Button { VerticalAlignment = VerticalAlignment.Center };
             hotkeyButton.Click += (s, e) => StartRecording();
-            DockPanel.SetDock(hotkeyButton, Dock.Right);
-            hotkeyRow.Children.Add(hotkeyButton);
-            var controls = new DockPanel { Margin = new Thickness(0, 12, 0, 0), LastChildFill = false };
+            var hotkeyChip = new Border
+            {
+                CornerRadius = new CornerRadius(9),
+                Background = B(TrackHex),
+                BorderBrush = B(BorderHex),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 2, 8, 2),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            hotkeyChip.Child = hotkeyButton;
+            DockPanel.SetDock(hotkeyChip, Dock.Right);
+            hotkeyRow.Children.Add(hotkeyChip);
+            footer.Children.Add(hotkeyRow);
+
+            var controls = new DockPanel { Margin = new Thickness(0, 6, 0, 0), LastChildFill = false };
             autorunCheck = new CheckBox
             {
                 Content = "Запускать с Windows",
@@ -604,166 +797,63 @@ namespace GDTimer
             };
             autorunCheck.Checked += (s, e) => { if (!loadingUi) SetAutorun(true); };
             autorunCheck.Unchecked += (s, e) => { if (!loadingUi) SetAutorun(false); };
-            var quit = new Button
-            {
-                Content = "Выход",
-                VerticalAlignment = VerticalAlignment.Center
-            };
+            var quit = new Button { Content = "Выход", VerticalAlignment = VerticalAlignment.Center };
             quit.Click += (s, e) => { if (QuitRequested != null) QuitRequested(); };
             controls.Children.Add(autorunCheck);
             DockPanel.SetDock(quit, Dock.Right);
             controls.Children.Add(quit);
-            footer.Children.Add(hotkeyRow);
             footer.Children.Add(controls);
             root.Children.Add(footer);
-            DockPanel.SetDock(footer, Dock.Bottom);
 
-            var body = new StackPanel();
-
-            var header = new DockPanel { LastChildFill = false };
-            var headerButtons = new StackPanel { Orientation = Orientation.Horizontal };
-            pinButton = HeaderButton("ПОВЕРХ", ToggleTopmost, AccentHex);
-            collapseButton = HeaderButton("—", ToggleCollapse, null);
-            var hideButton = HeaderButton("\u2715", (s, e) => Hide(), null);
-            headerButtons.Children.Add(pinButton);
-            headerButtons.Children.Add(collapseButton);
-            headerButtons.Children.Add(hideButton);
-            DockPanel.SetDock(headerButtons, Dock.Right);
-            header.Children.Add(headerButtons);
-            body.Children.Add(header);
-
-            var statusRow = new DockPanel { Margin = new Thickness(2, 14, 2, 0), LastChildFill = false };
-            var dotAndText = new StackPanel { Orientation = Orientation.Horizontal };
-            statusDot = new Ellipse { Width = 8, Height = 8, Fill = B(GreyDotHex), VerticalAlignment = VerticalAlignment.Center };
-            statusText = new TextBlock
-            {
-                FontSize = 12,
-                Foreground = B(MutedHex),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(8, 0, 0, 0),
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                MaxWidth = 172
-            };
-            dotAndText.Children.Add(statusDot);
-            dotAndText.Children.Add(statusText);
-            statusRow.Children.Add(dotAndText);
-            var todayBlock = new StackPanel { Orientation = Orientation.Horizontal };
-            DockPanel.SetDock(todayBlock, Dock.Right);
-            todayBlock.Children.Add(new TextBlock
-            {
-                Text = "СЕГОДНЯ",
-                FontSize = 9,
-                Foreground = B(FaintHex),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0)
-            });
-            todayValue = new TextBlock
-            {
-                FontSize = 13,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = B(TextHex),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            todayBlock.Children.Add(todayValue);
-            statusRow.Children.Add(todayBlock);
-            body.Children.Add(statusRow);
-
-            var collapsible = new StackPanel();
-
-            var navRow = new DockPanel { Margin = new Thickness(2, 14, 2, 0), LastChildFill = false };
-            monthLabel = new TextBlock
-            {
-                FontSize = 15,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = B(TextHex),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            navRow.Children.Add(monthLabel);
-            var nav = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            nav.Children.Add(NavButton("\u2039", () => Go(-1), 28));
-            nav.Children.Add(NavButton("\u203A", () => Go(1), 28));
-            nav.Children.Add(NavButton("Текущий", () => Go(0), 62));
-            DockPanel.SetDock(nav, Dock.Right);
-            navRow.Children.Add(nav);
-            collapsible.Children.Add(navRow);
-
-            var dowGrid = new UniformGrid { Columns = 7, Margin = new Thickness(0, 12, 0, 0) };
-            foreach (var w in Weekdays)
-            {
-                dowGrid.Children.Add(new TextBlock
-                {
-                    Text = w,
-                    FontSize = 10,
-                    Foreground = B(FaintHex),
-                    HorizontalAlignment = HorizontalAlignment.Center
-                });
-            }
-            collapsible.Children.Add(dowGrid);
-
-            calendarGrid = new Grid { Margin = new Thickness(0, 4, 0, 0) };
-            for (int i = 0; i < 7; i++)
-                calendarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            collapsible.Children.Add(calendarGrid);
-
-            levelsHeader = new TextBlock
-            {
-                Text = "Уровни сегодня",
-                FontSize = 10,
-                Foreground = B(FaintHex),
-                Margin = new Thickness(2, 14, 0, 0)
-            };
-            collapsible.Children.Add(levelsHeader);
-            levelsPanel = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
-            collapsible.Children.Add(levelsPanel);
-
-            collapsiblePart = collapsible;
-            body.Children.Add(collapsible);
-
-            root.Children.Add(body);
             card.Child = root;
             return card;
         }
 
-        private Button HeaderButton(string text, RoutedEventHandler onClick, string activeHex)
+        private static TextBlock SectionLabel(string text)
+        {
+            return new TextBlock
+            {
+                Text = text,
+                FontSize = 9.5,
+                FontWeight = FontWeights.Medium,
+                Foreground = B(FaintHex)
+            };
+        }
+
+        private static Border Divider(Thickness margin)
+        {
+            return new Border { Height = 1, Background = B(BorderHex), Margin = margin };
+        }
+
+        private Button IconButton(string text, RoutedEventHandler onClick)
         {
             var b = new Button
             {
                 Content = text,
+                Width = 24,
                 Height = 24,
-                Margin = new Thickness(6, 0, 0, 0),
+                Padding = new Thickness(0),
+                Margin = new Thickness(4, 0, 0, 0),
+                FontSize = 12,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            if (activeHex != null) b.Foreground = B(activeHex);
             b.Click += onClick;
             return b;
         }
 
-        private Button NavButton(string text, Action action, double width)
+        private Button GhostButton(string text, Action action)
         {
             var b = new Button
             {
                 Content = text,
-                Width = width,
-                Height = 24,
-                Margin = new Thickness(6, 0, 0, 0),
-                FontSize = width > 40 ? 10 : 13
+                Height = 26,
+                Padding = new Thickness(9, 0, 9, 0),
+                Margin = new Thickness(4, 0, 0, 0),
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center
             };
             b.Click += (s, e) => action();
             return b;
-        }
-
-        private void ToggleTopmost(object sender, RoutedEventArgs e)
-        {
-            Topmost = !Topmost;
-            pinButton.Foreground = Topmost ? B(AccentHex) : B(MutedHex);
-        }
-
-        private void ToggleCollapse(object sender, RoutedEventArgs e)
-        {
-            collapsed = !collapsed;
-            collapsiblePart.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
-            collapseButton.Content = collapsed ? "+" : "—";
-            FitHeight();
         }
 
         public void ReportState(GameState st, string lastLevel)
@@ -772,27 +862,24 @@ namespace GDTimer
 
             if (!st.Running)
             {
-                statusDot.Fill = B(GreyDotHex);
                 statusText.Text = "Geometry Dash не запущена";
             }
             else if (st.Playing && !st.Paused)
             {
-                statusDot.Fill = B(GreenHex);
-                statusText.Text = string.IsNullOrEmpty(st.LevelName) ? "В уровне" : "В уровне: " + st.LevelName;
+                var nm = !string.IsNullOrEmpty(st.LevelName) ? st.LevelName : currentLevel;
+                statusText.Text = "в " + (string.IsNullOrEmpty(nm) ? "уровне" : nm);
             }
             else if (st.Playing)
             {
-                statusDot.Fill = B(AmberHex);
-                statusText.Text = string.IsNullOrEmpty(st.LevelName) ? "Пауза" : "Пауза: " + st.LevelName;
+                statusText.Text = "Пауза";
             }
             else
             {
-                statusDot.Fill = B(GreyDotHex);
                 statusText.Text = "В меню";
             }
 
             var secs = store.SecondsToday();
-            todayValue.Text = secs > 0 ? FmtWords(secs) : "нет данных";
+            todayValue.Text = secs > 0 ? FmtWords(secs) : "0 мин";
             var minute = secs / 60;
             if (minute != lastRenderedMinute || currentLevel != lastRenderedLevel)
             {
@@ -849,32 +936,11 @@ namespace GDTimer
 
         private void FitHeight()
         {
-            double target;
-            if (collapsed)
-            {
-                target = CollapsedHeight;
-            }
-            else
-            {
-                var fe = Content as FrameworkElement;
-                if (fe == null) return;
-                try
-                {
-                    fe.Measure(new Size(Width, double.PositiveInfinity));
-                    target = Math.Ceiling(fe.DesiredSize.Height);
-                }
-                catch { return; }
-                if (target < CollapsedHeight) return;
-            }
-
-            var oldH = Height;
-            Height = target;
-            if (!double.IsNaN(Top) && oldH > 0 && Math.Abs(oldH - target) > 0.5)
-            {
-                Top += oldH - target;
-                var wa = SystemParameters.WorkArea;
-                if (Top < wa.Top) Top = wa.Top;
-            }
+            Height = FixedHeight;
+            var wa = SystemParameters.WorkArea;
+            Left = wa.Right - Width - 12;
+            Top = wa.Bottom - FixedHeight - 12;
+            if (Top < wa.Top) Top = wa.Top;
         }
 
         private void UpdateLevels()
@@ -886,41 +952,33 @@ namespace GDTimer
                 if (kv.Value > 0) list.Add(kv);
             list.Sort((a, b) => b.Value.CompareTo(a.Value));
 
-            if (list.Count == 0)
-            {
-                levelsHeader.Visibility = Visibility.Collapsed;
-                levelsPanel.Visibility = Visibility.Collapsed;
-                return;
-            }
-            levelsHeader.Visibility = Visibility.Visible;
-            levelsPanel.Visibility = Visibility.Visible;
+            if (list.Count == 0) return;
 
-            int shown = 0;
             foreach (var kv in list)
             {
-                if (shown >= 8) break;
-                shown++;
+                bool cur = kv.Key == currentLevel;
 
-                var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 1, 0, 1) };
+                var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 3, 0, 3) };
                 var name = new TextBlock
                 {
                     Text = kv.Key,
-                    FontSize = 11.5,
-                    Foreground = kv.Key == currentLevel ? B(TextHex) : B(MutedHex),
+                    FontSize = 12,
+                    Foreground = cur ? B(TextHex) : B(MutedHex),
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     VerticalAlignment = VerticalAlignment.Center
                 };
-                var time = new TextBlock
+                var time = Tabular(new TextBlock
                 {
                     Text = FmtShort(kv.Value),
                     FontSize = 11.5,
                     FontWeight = FontWeights.SemiBold,
-                    Foreground = kv.Key == currentLevel ? B(AccentHex) : B(TextHex),
+                    Foreground = cur ? B(AccentHex) : B(TextHex),
                     VerticalAlignment = VerticalAlignment.Center
-                };
+                });
                 DockPanel.SetDock(time, Dock.Right);
                 row.Children.Add(name);
                 row.Children.Add(time);
+
                 levelsPanel.Children.Add(row);
             }
         }
@@ -944,14 +1002,14 @@ namespace GDTimer
                 Foreground = B(TextHex),
                 VerticalAlignment = VerticalAlignment.Center
             };
-            var totTxt = new TextBlock
+            var totTxt = Tabular(new TextBlock
             {
                 Text = FmtWords(secs),
                 FontSize = 11.5,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = B(AccentHex),
                 VerticalAlignment = VerticalAlignment.Center
-            };
+            });
             DockPanel.SetDock(totTxt, Dock.Right);
             head.Children.Add(dateTxt);
             head.Children.Add(totTxt);
@@ -970,7 +1028,7 @@ namespace GDTimer
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     VerticalAlignment = VerticalAlignment.Center
                 };
-                var time = new TextBlock
+                var time = Tabular(new TextBlock
                 {
                     Text = FmtShort(kv.Value),
                     FontSize = 11.5,
@@ -978,7 +1036,7 @@ namespace GDTimer
                     Foreground = B(TextHex),
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(16, 0, 0, 0)
-                };
+                });
                 DockPanel.SetDock(time, Dock.Right);
                 row.Children.Add(name);
                 row.Children.Add(time);
@@ -1005,9 +1063,8 @@ namespace GDTimer
             for (int d = 1; d <= days; d++)
                 max = Math.Max(max, store.Get(new DateTime(viewMonth.Year, viewMonth.Month, d)));
 
-            int rows = (lead + days + 6) / 7;
-            for (int r = 0; r < rows; r++)
-                calendarGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(66) });
+            for (int r = 0; r < 6; r++)
+                calendarGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(30) });
 
             for (int i = 0; i < lead; i++)
             {
@@ -1038,15 +1095,12 @@ namespace GDTimer
                     CornerRadius = new CornerRadius(10),
                     Background = B(LevelHex[idx]),
                     BorderBrush = date == today ? B(AccentHex) : null,
-                    BorderThickness = date == today ? new Thickness(1) : new Thickness(0),
+                    BorderThickness = date == today ? new Thickness(1.25) : new Thickness(0),
                     Margin = new Thickness(3)
                 };
                 SetDayTooltip(border, date, secs);
 
                 var panel = new Grid();
-                panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-                panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
                 var num = new TextBlock
                 {
@@ -1055,47 +1109,9 @@ namespace GDTimer
                     FontWeight = FontWeights.SemiBold,
                     Foreground = idx == 0 ? B(MutedHex) : B(CellTextHex[idx]),
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 4, 0, 0)
+                    VerticalAlignment = VerticalAlignment.Center
                 };
-                Grid.SetRow(num, 0);
                 panel.Children.Add(num);
-
-                if (secs > 0)
-                {
-                    string topLevel = null;
-                    long best = -1;
-                    foreach (var lv in store.LevelsOn(date))
-                        if (lv.Value > best) { best = lv.Value; topLevel = lv.Key; }
-
-                    if (!string.IsNullOrEmpty(topLevel))
-                    {
-                        var nm = new TextBlock
-                        {
-                            Text = topLevel,
-                            FontSize = 8,
-                            Foreground = B(CellTextHex[idx]),
-                            HorizontalAlignment = HorizontalAlignment.Stretch,
-                            TextAlignment = TextAlignment.Center,
-                            TextTrimming = TextTrimming.CharacterEllipsis,
-                            VerticalAlignment = VerticalAlignment.Center,
-                            Margin = new Thickness(2, 0, 2, 0)
-                        };
-                        Grid.SetRow(nm, 1);
-                        panel.Children.Add(nm);
-                    }
-
-                    var t = new TextBlock
-                    {
-                        Text = FmtShort(secs),
-                        FontSize = 9.5,
-                        Foreground = B(CellTextHex[idx]),
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Bottom,
-                        Margin = new Thickness(0, 0, 0, 6)
-                    };
-                    Grid.SetRow(t, 2);
-                    panel.Children.Add(t);
-                }
 
                 border.Child = panel;
                 Grid.SetRow(border, row);
@@ -1374,8 +1390,8 @@ namespace GDTimer
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property=""IsMouseOver"" Value=""True"">
-                                    <Setter TargetName=""bd"" Property=""Background"" Value=""#1E242E""/>
-                                    <Setter TargetName=""bd"" Property=""TextElement.Foreground"" Value=""#E7E9ED""/>
+                                    <Setter TargetName=""bd"" Property=""Background"" Value=""#1B221E""/>
+                                    <Setter TargetName=""bd"" Property=""TextElement.Foreground"" Value=""#F3FAF5""/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -1391,19 +1407,19 @@ namespace GDTimer
                         <ControlTemplate TargetType=""CheckBox"">
                             <StackPanel Orientation=""Horizontal"" Background=""Transparent"">
                                 <Grid Width=""15"" Height=""15"" VerticalAlignment=""Center"">
-                                    <Border x:Name=""box"" CornerRadius=""4"" Background=""#151920"" BorderBrush=""#2A2F38"" BorderThickness=""1""/>
-                                    <Path x:Name=""mark"" Data=""M3 7.5 L6 10.5 L12 3.5"" Stroke=""#74A4F4"" StrokeThickness=""2"" Visibility=""Collapsed""/>
+                                    <Border x:Name=""box"" CornerRadius=""4"" Background=""#171C19"" BorderBrush=""#2A322C"" BorderThickness=""1""/>
+                                    <Path x:Name=""mark"" Data=""M3 7.5 L6 10.5 L12 3.5"" Stroke=""#45D07C"" StrokeThickness=""2"" Visibility=""Collapsed""/>
                                 </Grid>
                                 <ContentPresenter Margin=""8,0,0,0"" VerticalAlignment=""Center"" RecognizesAccessKey=""False""/>
                             </StackPanel>
                             <ControlTemplate.Triggers>
                                 <Trigger Property=""IsChecked"" Value=""True"">
                                     <Setter TargetName=""mark"" Property=""Visibility"" Value=""Visible""/>
-                                    <Setter TargetName=""box"" Property=""BorderBrush"" Value=""#74A4F4""/>
+                                    <Setter TargetName=""box"" Property=""BorderBrush"" Value=""#45D07C""/>
                                 </Trigger>
                                 <Trigger Property=""IsMouseOver"" Value=""True"">
-                                    <Setter TargetName=""box"" Property=""Background"" Value=""#1C212B""/>
-                                    <Setter Property=""Foreground"" Value=""#B9C0CB""/>
+                                    <Setter TargetName=""box"" Property=""Background"" Value=""#1A211D""/>
+                                    <Setter Property=""Foreground"" Value=""#C4CFC8""/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -1416,12 +1432,68 @@ namespace GDTimer
                 <Setter Property=""Template"">
                     <Setter.Value>
                         <ControlTemplate TargetType=""ToolTip"">
-                            <Border Background=""#12151B"" BorderBrush=""#2A2F38"" BorderThickness=""1"" CornerRadius=""10"" Padding=""12,10"">
+                            <Border Background=""#141816"" BorderBrush=""#262E29"" BorderThickness=""1"" CornerRadius=""10"" Padding=""12,10"">
                                 <ContentPresenter/>
                             </Border>
                         </ControlTemplate>
                     </Setter.Value>
                 </Setter>
+            </Style>
+            <Style TargetType=""ScrollBar"">
+                <Setter Property=""Background"" Value=""Transparent""/>
+                <Setter Property=""Width"" Value=""8""/>
+                <Setter Property=""MinWidth"" Value=""8""/>
+                <Setter Property=""Template"">
+                    <Setter.Value>
+                        <ControlTemplate TargetType=""ScrollBar"">
+                            <Grid Background=""Transparent"">
+                                <Track x:Name=""PART_Track"" IsDirectionReversed=""True"">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Command=""ScrollBar.PageUpCommand"" Background=""Transparent"" BorderThickness=""0"" Focusable=""False"">
+                                            <RepeatButton.Template>
+                                                <ControlTemplate TargetType=""RepeatButton"">
+                                                    <Border Background=""Transparent""/>
+                                                </ControlTemplate>
+                                            </RepeatButton.Template>
+                                        </RepeatButton>
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Command=""ScrollBar.PageDownCommand"" Background=""Transparent"" BorderThickness=""0"" Focusable=""False"">
+                                            <RepeatButton.Template>
+                                                <ControlTemplate TargetType=""RepeatButton"">
+                                                    <Border Background=""Transparent""/>
+                                                </ControlTemplate>
+                                            </RepeatButton.Template>
+                                        </RepeatButton>
+                                    </Track.IncreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb MinHeight=""24"">
+                                            <Thumb.Template>
+                                                <ControlTemplate TargetType=""Thumb"">
+                                                    <Border x:Name=""thumb"" CornerRadius=""3"" Width=""5"" HorizontalAlignment=""Center"" Background=""#2E6B45""/>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property=""IsMouseOver"" Value=""True"">
+                                                            <Setter TargetName=""thumb"" Property=""Background"" Value=""#45D07C""/>
+                                                        </Trigger>
+                                                        <Trigger Property=""IsDragging"" Value=""True"">
+                                                            <Setter TargetName=""thumb"" Property=""Background"" Value=""#45D07C""/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Thumb.Template>
+                                        </Thumb>
+                                    </Track.Thumb>
+                                </Track>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property=""Orientation"" Value=""Horizontal"">
+                        <Setter Property=""Width"" Value=""Auto""/>
+                        <Setter Property=""Height"" Value=""8""/>
+                    </Trigger>
+                </Style.Triggers>
             </Style>
         </ResourceDictionary>";
     }
