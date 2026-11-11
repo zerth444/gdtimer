@@ -134,7 +134,7 @@ namespace GDTimer
         {
             mem.Poll();
             var st = mem.State;
-            if (st.Playing)
+            if (st.Playing && !st.Paused)
             {
                 store.AddSecond(DateTime.Today);
                 if (!string.IsNullOrEmpty(st.LevelName))
@@ -191,8 +191,7 @@ namespace GDTimer
         {
             try
             {
-                if (!File.Exists(FilePath)) { }
-                else
+                if (!File.Exists(FilePath)) return;
                 foreach (var line in File.ReadAllLines(FilePath))
                 {
                     if (string.IsNullOrWhiteSpace(line)) continue;
@@ -325,7 +324,6 @@ namespace GDTimer
         private const int PlayLayerOffset = 0x208;
         private const int PlayLayerPausedOffset = 0x39EF;
         private const int LevelNameOffset = 0x158;
-        private const string PlayLayerRtti = ".?AVPlayLayer@@";
         private const string GJGameLevelRtti = ".?AVGJGameLevel@@";
 
         private const int PROCESS_VM_READ = 0x0010;
@@ -567,18 +565,14 @@ namespace GDTimer
         private const string MutedHex = "#93A09A";
         private const string FaintHex = "#5C6963";
         private const string AccentHex = "#45D07C";
-        private const string GreenHex = "#45D07C";
         private const string AmberHex = "#D8A657";
-        private const string GreyDotHex = "#3A423D";
+        private const string ErrorHex = "#E06C6C";
         private static readonly string[] LevelHex = { "#181D1A", "#1E2A22", "#254231", "#2E5C3F", "#3A7A50", "#4AA066" };
         private static readonly string[] CellTextHex = { "#6E7A73", "#A7C4B2", "#BCD6C6", "#D2E6D9", "#E6F2EA", "#F3FAF5" };
-
-
 
         private const double WindowWidth = 382;
         private const double ExpandedHeight = 700;
         private const double FixedHeight = 660;
-        private const double CollapsedHeight = 132;
 
         private static Brush B(string hex) { return (Brush)new BrushConverter().ConvertFromString(hex); }
 
@@ -681,8 +675,10 @@ namespace GDTimer
             Loaded += (s, e) =>
             {
                 loadingUi = true;
-                autorunCheck.IsChecked = AutorunEnabled();
+                bool autorun = AutorunEnabled();
+                autorunCheck.IsChecked = autorun;
                 loadingUi = false;
+                if (autorun) SetAutorun(true);
                 RefreshAll();
                 InstallHotkeyHook();
             };
@@ -1009,15 +1005,6 @@ namespace GDTimer
                 lastRenderedLevel = currentLevel;
                 RefreshAll();
             }
-        }
-
-        private static string FmtClock(long total)
-        {
-            var h = total / 3600;
-            var m = (total % 3600) / 60;
-            var s = total % 60;
-            if (h > 0) return string.Format("{0}:{1:00}:{2:00}", h, m, s);
-            return string.Format("{0}:{1:00}", m, s);
         }
 
         private static string FmtWords(long total)
@@ -1440,7 +1427,7 @@ namespace GDTimer
         private void ShowHint(string text)
         {
             hotkeyButton.Content = text;
-            hotkeyButton.Foreground = B("#E06C6C");
+            hotkeyButton.Foreground = B(ErrorHex);
             if (hintTimer == null)
             {
                 hintTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.6) };
